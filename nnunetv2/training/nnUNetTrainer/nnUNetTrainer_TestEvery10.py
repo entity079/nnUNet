@@ -14,27 +14,27 @@ class nnUNetTrainer_TestEvery10(nnUNetTrainer):
             self.run_test_inference()
 
     def run_test_inference(self):
-        dataset_name = self.dataset_name
-        configuration = self.configuration
-        fold = self.fold
-        trainer = self.__class__.__name__
+    dataset_name_or_id = self.dataset_name_or_id
+    configuration = self.configuration
+    fold = self.fold
+    trainer = self.__class__.__name__
 
-        output_dir = os.path.join(
-            self.output_folder,
-            f"test_epoch_{self.current_epoch + 1}"
-        )
+    output_dir = os.path.join(
+        self.output_folder,
+        f"test_epoch_{self.current_epoch + 1}"
+    )
 
-        os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
-        cmd = [
-            "nnUNetv2_predict",
-            "-i", f"{os.environ['nnUNet_raw']}/Dataset{dataset_name}/imagesTs",
-            "-o", output_dir,
-            "-d", dataset_name,
-            "-c", configuration,
-            "-f", str(fold),
-            "-tr", trainer,
-            "--disable_tta"
-        ]
+    cmd = [
+        "nnUNetv2_predict",
+        "-i", f"{os.environ['nnUNet_raw']}/Dataset{dataset_name_or_id}/imagesTs",
+        "-o", output_dir,
+        "-d", str(dataset_name_or_id),
+        "-c", configuration,
+        "-f", str(fold),
+        "-tr", trainer,
+        "--disable_tta"
+    ]
 
-        subprocess.run(cmd, check=True)
+    subprocess.run(cmd, check=True)
