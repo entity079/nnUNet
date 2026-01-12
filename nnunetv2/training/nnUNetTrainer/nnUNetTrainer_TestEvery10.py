@@ -8,8 +8,7 @@ class nnUNetTrainer_TestEvery10(nnUNetTrainer):
 
         if (self.current_epoch + 1) % 10 == 0:
             self.logger.log("val_dice", float(val_dice), self.current_epoch)
-
-
+            self.logger.log("val_loss", float(val_loss), self.current_epoch)
             self.run_test_inference()
 
     def run_test_inference(self):
