@@ -63,17 +63,9 @@ class DC_CE_FNR_loss(nn.Module):
         else:
             fpr_loss = 0
     
-        result = (
-            self.weight_ce * ce_loss +
-            self.weight_dice * dc_loss +
-            self.weight_fpr * fpr_loss
-        )
-        if return_components:
-            return result, {
-                "ce": ce_loss.detach(),
-                "dice": dc_loss.detach(),
-                "fpr": fpr_loss.detach()
-            }
+        result = (self.weight_fpr * fpr_loss)
+        
+        
 
     
         return result
@@ -135,12 +127,8 @@ class DC_and_BCE_loss(nn.Module):
         fpr_loss = self.fpr(net_output, target_regions, loss_mask=mask) \
         if self.weight_fpr != 0 else 0
     
-        result = (
-            self.weight_ce * ce_loss +
-            self.weight_dice * dc_loss +
-            self.weight_fpr * fpr_loss
-        )
-        logging.info(f"CE: {ce_loss.item():.4f}, Dice: {dc_loss.item():.4f}, FPR: {fpr_loss.item():.4f}")
+        result = (self.weight_fpr * fpr_loss)        
+        
         return result
 
 
