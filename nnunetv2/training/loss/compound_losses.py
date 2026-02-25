@@ -69,7 +69,7 @@ class DC_CE_FNR_loss(nn.Module):
 
 class DC_and_BCE_loss(nn.Module):
     def __init__(self, bce_kwargs, soft_dice_kwargs, weight_ce=1, weight_dice=1,weight_fpr=1, use_ignore_label: bool = False,
-                 dice_class=MemoryEfficientSoftDiceLoss,soft_fpr_kwargs=None,fpr_class=MemoryEfficientSoftFPRLoss):
+                 dice_class=MemoryEfficientSoftDiceLoss,soft_fpr_kwargs=None,fpr_class=MemoryEfficientSoftFNRLoss):
         """
         DO NOT APPLY NONLINEARITY IN YOUR NETWORK!
 
