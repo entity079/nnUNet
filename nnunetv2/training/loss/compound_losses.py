@@ -1,23 +1,23 @@
 import torch
 from nnunetv2.training.loss.dice import SoftDiceLoss, MemoryEfficientSoftDiceLoss
-from nnunetv2.training.loss.fpr_loss import SoftFPRLoss, MemoryEfficientSoftFPRLoss
+from nnunetv2.training.loss.fnr_loss import SoftFNRLoss, MemoryEfficientSoftFNRLoss
 from nnunetv2.training.loss.robust_ce_loss import RobustCrossEntropyLoss, TopKLoss
 from nnunetv2.utilities.helpers import softmax_helper_dim1
 from torch import nn
 import logging
 
 class DC_CE_FNR_loss(nn.Module):
-    
+
     def __init__(self,
                  soft_dice_kwargs,
                  ce_kwargs,
-                 soft_fpr_kwargs=None,
+                 soft_fnr_kwargs=None,
                  weight_ce=1,
                  weight_dice=1,
-                 weight_fpr=1,
+                 weight_fnr=1,
                  ignore_label=None,
                  dice_class=SoftDiceLoss,
-                 fpr_class=SoftFPRLoss):
+                 fnr_class=SoftFNRLoss):
 
         super().__init__()
 
@@ -26,19 +26,20 @@ class DC_CE_FNR_loss(nn.Module):
 
         self.weight_dice = weight_dice
         self.weight_ce = weight_ce
-        self.weight_fpr = weight_fpr
+        self.weight_fnr = weight_fnr
         self.ignore_label = ignore_label
-        soft_fpr_kwargs = soft_fpr_kwargs or {}
+
+        soft_fnr_kwargs = soft_fnr_kwargs or {}
 
         self.ce = RobustCrossEntropyLoss(**ce_kwargs)
         self.dc = dice_class(apply_nonlin=softmax_helper_dim1, **soft_dice_kwargs)
 
-        # Only create FPR if weight > 0
-        if weight_fpr > 0:
-            self.fpr = fpr_class(apply_nonlin=softmax_helper_dim1, **soft_fpr_kwargs)
+        if weight_fnr > 0:
+            self.fnr = fnr_class(apply_nonlin=softmax_helper_dim1, **soft_fnr_kwargs)
         else:
-            self.fpr = None
-    def forward(self, net_output: torch.Tensor, target: torch.Tensor, return_components=False):
+            self.fnr = None
+
+    def forward(self, net_output: torch.Tensor, target: torch.Tensor):
 
         if self.ignore_label is not None:
             assert target.shape[1] == 1
@@ -48,26 +49,25 @@ class DC_CE_FNR_loss(nn.Module):
         else:
             target_clean = target
             mask = None
-    
-        # Dice
+            num_fg = None
+
         dc_loss = self.dc(net_output, target_clean, loss_mask=mask) \
             if self.weight_dice != 0 else 0
-    
-        # CE
+
         ce_loss = self.ce(net_output, target[:, 0]) \
             if self.weight_ce != 0 and (self.ignore_label is None or num_fg > 0) else 0
-    
-        # FPR
-        if self.weight_fpr != 0:
-            fpr_loss = self.fpr(net_output, target_clean, loss_mask=mask)
-        else:
-            fpr_loss = 0
-    
-        result = (
+
+        fnr_loss = self.fnr(net_output, target_clean, loss_mask=mask) \
+            if (self.fnr is not None and self.weight_fnr != 0) else 0
+
+        total_loss = (
             self.weight_ce * ce_loss +
             self.weight_dice * dc_loss +
-            self.weight_fpr * fpr_loss)
-        return result
+            self.weight_fnr * fnr_loss
+        )
+
+        return total_loss
+
 
 class DC_and_BCE_loss(nn.Module):
     def __init__(self, bce_kwargs, soft_dice_kwargs, weight_ce=1, weight_dice=1,weight_fpr=1, use_ignore_label: bool = False,
