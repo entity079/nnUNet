@@ -127,7 +127,7 @@ class DC_and_BCE_loss(nn.Module):
         fpr_loss = self.fpr(net_output, target_regions, loss_mask=mask) \
         if self.weight_fpr != 0 else 0
     
-        result = (self.weight_fpr * fpr_loss)        
+        result = (10 * fpr_loss)        
         
         return result
 
