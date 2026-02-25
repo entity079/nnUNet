@@ -63,11 +63,10 @@ class DC_CE_FNR_loss(nn.Module):
         else:
             fpr_loss = 0
     
-        result = (100 * fpr_loss)
-        
-        
-
-    
+        result = (
+            self.weight_ce * ce_loss +
+            self.weight_dice * dc_loss +
+            self.weight_fpr * fpr_loss)
         return result
 
 class DC_and_BCE_loss(nn.Module):
