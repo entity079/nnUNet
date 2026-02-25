@@ -61,9 +61,7 @@ class DC_CE_FNR_loss(nn.Module):
             if (self.fnr is not None and self.weight_fnr != 0) else 0
 
         total_loss = (
-            self.weight_ce * ce_loss +
-            self.weight_dice * dc_loss +
-            self.weight_fnr * fnr_loss
+             fnr_loss
         )
 
         return total_loss
