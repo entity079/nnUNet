@@ -167,7 +167,7 @@ class CL_and_CE_loss(nn.Module):
             if self.weight_ce != 0 and (self.ignore_label is None or num_fg > 0) else 0
 
         total_loss = (
-            self.weight_ce * ce_loss +
+            
             self.weight_cldice * cldice_loss
         )
 
