@@ -52,7 +52,7 @@ class nnUNetTrainerCLDiceCELoss(nnUNetTrainer):
 
             weights = weights / weights.sum()
             loss = DeepSupervisionWrapper(loss, weights)
-        self.print_to_log_file("loss used is"loss,
+        self.print_to_log_file("loss used is",loss,
                                also_print_to_console=True, add_timestamp=False)
 
         return loss
