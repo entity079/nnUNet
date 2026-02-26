@@ -61,8 +61,9 @@ class DC_CE_FNR_loss(nn.Module):
         fnr_loss = self.fnr(net_output, target_clean, loss_mask=mask) \
             if (self.fnr is not None and self.weight_fnr != 0) else 0
 
-        total_loss = (
-             fnr_loss
+       total_loss = (
+            self.weight_ce * ce_loss +
+            self.weight_cldice * cldice_loss
         )
 
         return total_loss
