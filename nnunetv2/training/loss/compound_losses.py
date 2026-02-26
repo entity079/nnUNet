@@ -1,6 +1,7 @@
 import torch
 from nnunetv2.training.loss.dice import SoftDiceLoss, MemoryEfficientSoftDiceLoss
 from nnunetv2.training.loss.fnr_loss import SoftFNRLoss, MemoryEfficientSoftFNRLoss
+from nnunetv2.training.loss.cldice import SoftCLDiceLoss
 from nnunetv2.training.loss.robust_ce_loss import RobustCrossEntropyLoss, TopKLoss
 from nnunetv2.utilities.helpers import softmax_helper_dim1
 from torch import nn
@@ -127,6 +128,50 @@ class DC_and_BCE_loss(nn.Module):
         result = (10 * fpr_loss)        
         
         return result
+
+class CL_and_CE_loss(nn.Module):
+    def __init__(self,
+                 cldice_kwargs,
+                 ce_kwargs,
+                 weight_ce=1,
+                 weight_cldice=1,
+                 ignore_label=None,
+                 cldice_class=SoftCLDiceLoss):
+        super().__init__()
+
+        if ignore_label is not None:
+            ce_kwargs['ignore_index'] = ignore_label
+
+        self.weight_cldice = weight_cldice
+        self.weight_ce = weight_ce
+        self.ignore_label = ignore_label
+
+        self.ce = RobustCrossEntropyLoss(**ce_kwargs)
+        self.cldice = cldice_class(**cldice_kwargs)
+
+    def forward(self, net_output: torch.Tensor, target: torch.Tensor):
+        if self.ignore_label is not None:
+            assert target.shape[1] == 1
+            mask = target != self.ignore_label
+            target_clean = torch.where(mask, target, 0)
+            num_fg = mask.sum()
+        else:
+            target_clean = target
+            mask = None
+            num_fg = None
+
+        cldice_loss = self.cldice(net_output, target_clean, loss_mask=mask) \
+            if self.weight_cldice != 0 else 0
+
+        ce_loss = self.ce(net_output, target[:, 0]) \
+            if self.weight_ce != 0 and (self.ignore_label is None or num_fg > 0) else 0
+
+        total_loss = (
+            self.weight_ce * ce_loss +
+            self.weight_cldice * cldice_loss
+        )
+
+        return total_loss
 
 
 class DC_and_topk_loss(nn.Module):
