@@ -53,7 +53,7 @@ from nnunetv2.training.data_augmentation.compute_initial_patch_size import get_p
 from nnunetv2.training.dataloading.nnunet_dataset import infer_dataset_class
 from nnunetv2.training.dataloading.data_loader import nnUNetDataLoader
 from nnunetv2.training.logging.nnunet_logger import MetaLogger
-from nnunetv2.training.loss.compound_losses import DC_CE_FNR_loss, DC_and_BCE_loss
+from nnunetv2.training.loss.compound_losses import DC_and_CE_loss, DC_and_BCE_loss
 from nnunetv2.training.loss.deep_supervision import DeepSupervisionWrapper
 from nnunetv2.training.loss.dice import get_tp_fp_fn_tn, MemoryEfficientSoftDiceLoss
 from nnunetv2.training.lr_scheduler.polylr import PolyLRScheduler
@@ -411,28 +411,10 @@ class nnUNetTrainer(object):
                                     'do_bg': True, 'smooth': 1e-5, 'ddp': self.is_ddp},
                                    use_ignore_label=self.label_manager.ignore_label is not None,
                                    dice_class=MemoryEfficientSoftDiceLoss)
-            self.print_to_log_file("DC_and_BCE_lossfunction implemented",also_print_to_console=True, add_timestamp=False)
         else:
-            loss = DC_CE_FNR_loss(
-            soft_dice_kwargs={
-                'batch_dice': self.configuration_manager.batch_dice,
-                'smooth': 1e-5,
-                'do_bg': False,
-                'ddp': self.is_ddp
-            },
-            ce_kwargs={},
-            soft_fnr_kwargs={
-                'batch_dice': self.configuration_manager.batch_dice,
-                'smooth': 1e-5,
-                'do_bg': False,
-                'ddp': self.is_ddp
-            },
-            weight_ce=1,
-            weight_dice=1,
-            weight_fnr=1,   # <- renamed
-            ignore_label=self.label_manager.ignore_label,
-            dice_class=MemoryEfficientSoftDiceLoss)
-            self.print_to_log_file("DC_CE_FNR_loss function implemented",also_print_to_console=True, add_timestamp=False)
+            loss = DC_and_CE_loss({'batch_dice': self.configuration_manager.batch_dice,
+                                   'smooth': 1e-5, 'do_bg': False, 'ddp': self.is_ddp}, {}, weight_ce=1, weight_dice=1,
+                                  ignore_label=self.label_manager.ignore_label, dice_class=MemoryEfficientSoftDiceLoss)
 
         if self._do_i_compile():
             loss.dc = torch.compile(loss.dc)
@@ -576,9 +558,9 @@ class nnUNetTrainer(object):
                 self.print_to_log_file("Unable to plot network architecture:")
                 self.print_to_log_file(e)
 
-                self.print_to_log_file("\nprinting the network instead:\n")
-                self.print_to_log_file(self.network)
-                self.print_to_log_file("\n")
+                # self.print_to_log_file("\nprinting the network instead:\n")
+                # self.print_to_log_file(self.network)
+                # self.print_to_log_file("\n")
             finally:
                 empty_cache(self.device)
 
@@ -1160,7 +1142,6 @@ class nnUNetTrainer(object):
         self.print_to_log_file('val_loss', np.round(self.logger.get_value('val_losses', step=-1), decimals=4))
         self.print_to_log_file('Pseudo dice', [np.round(i, decimals=4) for i in
                                                self.logger.get_value('dice_per_class_or_region', step=-1)])
-        
         self.print_to_log_file(
             f"Epoch time: {np.round(self.logger.get_value('epoch_end_timestamps', step=-1) - self.logger.get_value('epoch_start_timestamps', step=-1), decimals=2)} s")
 
