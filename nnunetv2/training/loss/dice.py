@@ -54,6 +54,66 @@ class SoftDiceLoss(nn.Module):
 
         return -dc
 
+class MemoryEfficientGeneralizedDiceLoss(nn.Module):
+    def __init__(self, apply_nonlin: Callable = None, batch_dice: bool = False, do_bg: bool = True,
+                 smooth: float = 1., ddp: bool = True):
+        """
+        Generalized Dice Loss with class-volume-based weighting.
+        """
+        super().__init__()
+
+        self.do_bg = do_bg
+        self.batch_dice = batch_dice
+        self.apply_nonlin = apply_nonlin
+        self.smooth = smooth
+        self.ddp = ddp
+
+    def forward(self, x, y, loss_mask=None):
+        if self.apply_nonlin is not None:
+            x = self.apply_nonlin(x)
+
+        axes = tuple(range(2, x.ndim))
+
+        with torch.no_grad():
+            if x.ndim != y.ndim:
+                y = y.view((y.shape[0], 1, *y.shape[1:]))
+
+            if x.shape == y.shape:
+                y_onehot = y.to(torch.float32)
+            else:
+                y_onehot = torch.zeros(x.shape, device=x.device, dtype=torch.float32)
+                y_onehot.scatter_(1, y.long(), 1)
+
+            if not self.do_bg:
+                y_onehot = y_onehot[:, 1:]
+
+        if not self.do_bg:
+            x = x[:, 1:]
+
+        if loss_mask is not None:
+            loss_mask = loss_mask.to(x.dtype)
+            y_onehot = y_onehot * loss_mask
+            x = x * loss_mask
+
+        intersection = (x * y_onehot).sum(axes, dtype=torch.float32)
+        sum_pred = x.sum(axes, dtype=torch.float32)
+        sum_gt = y_onehot.sum(axes, dtype=torch.float32)
+
+        if self.batch_dice and self.ddp:
+            intersection = AllGatherGrad.apply(intersection).sum(0, dtype=torch.float32)
+            sum_pred = AllGatherGrad.apply(sum_pred).sum(0, dtype=torch.float32)
+            sum_gt = AllGatherGrad.apply(sum_gt).sum(0, dtype=torch.float32)
+
+        if self.batch_dice:
+            intersection = intersection.sum(0, dtype=torch.float32)
+            sum_pred = sum_pred.sum(0, dtype=torch.float32)
+            sum_gt = sum_gt.sum(0, dtype=torch.float32)
+
+        class_weights = 1.0 / torch.square(sum_gt.clamp_min(1e-6))
+        numerator = 2.0 * (class_weights * intersection).sum()
+        denominator = (class_weights * (sum_pred + sum_gt)).sum().clamp_min(1e-8)
+        gdl = (numerator + self.smooth) / (denominator + self.smooth)
+        return -gdl
 
 class MemoryEfficientSoftDiceLoss(nn.Module):
     def __init__(self, apply_nonlin: Callable = None, batch_dice: bool = False, do_bg: bool = True, smooth: float = 1.,
