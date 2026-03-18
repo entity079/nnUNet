@@ -4,7 +4,7 @@ from batchgenerators.dataloading.single_threaded_augmenter import SingleThreaded
 from nnunetv2.training.dataloading.data_loader import nnUNetDataLoader
 from nnunetv2.training.dataloading.data_loader_mixup_mosaic import nnUNetDataLoaderMixupMosaic
 from nnunetv2.training.dataloading.nnunet_dataset import infer_dataset_class
-from nnunetv2.training.nnUNetTrainer.variants.data_augmentation.nnUNetTrainerMixup import nnUNetTrainerMixup
+from nnunetv2.training.nnUNetTrainer.nnUNetTrainerMixup import nnUNetTrainerMixup
 from nnunetv2.utilities.default_n_proc_DA import get_allowed_n_proc_DA
 
 
