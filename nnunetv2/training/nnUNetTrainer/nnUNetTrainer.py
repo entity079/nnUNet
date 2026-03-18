@@ -1143,6 +1143,10 @@ class nnUNetTrainer(object):
 
     def on_epoch_end(self):
         self.logger.log('epoch_end_timestamps', time(), self.current_epoch)
+        # Save every 50 epochs
+        if self.current_epoch % 50 == 0 and self.current_epoch != 0:
+            filename = f"checkpoint_epoch_{self.current_epoch}.pth"
+            self.save_checkpoint(join(self.output_folder, filename))
 
         self.print_to_log_file('train_loss', np.round(self.logger.get_value('train_losses', step=-1), decimals=4))
         self.print_to_log_file('val_loss', np.round(self.logger.get_value('val_losses', step=-1), decimals=4))
