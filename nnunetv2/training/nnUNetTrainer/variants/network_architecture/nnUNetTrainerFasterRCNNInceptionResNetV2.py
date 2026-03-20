@@ -20,6 +20,23 @@ class nnUNetTrainerFasterRCNNInceptionResNetV2(nnUNetTrainerMixupMosaic):
         super().__init__(plans, configuration, fold, dataset_json, device)
         self.initial_lr = 3e-4
         self.weight_decay = 1e-5
+        self.maximum_batch_size = 2
+        self.maximum_num_stages = 5
+        self.maximum_features_per_stage = 256
+        self.maximum_backbone_channels = 64
+
+    def _do_i_compile(self):
+        return False
+
+    def _set_batch_size_and_oversample(self):
+        super()._set_batch_size_and_oversample()
+        self.batch_size = min(self.batch_size, self.maximum_batch_size)
+
+    def _get_deep_supervision_scales(self):
+        scales = super()._get_deep_supervision_scales()
+        if scales is None:
+            return None
+        return scales[:self.maximum_num_stages - 1]
 
     def configure_optimizers(self):
         optimizer = Adam(self.network.parameters(), lr=self.initial_lr, weight_decay=self.weight_decay)
@@ -75,7 +92,18 @@ class nnUNetTrainerFasterRCNNInceptionResNetV2(nnUNetTrainerMixupMosaic):
                                    enable_deep_supervision: bool = True):
         del architecture_class_name, arch_init_kwargs_req_import
         arch_init_kwargs = dict(arch_init_kwargs)
-        arch_init_kwargs.setdefault('backbone_channels', 128)
+        features_per_stage = arch_init_kwargs.get('features_per_stage')
+        if features_per_stage is not None:
+            features_per_stage = [min(int(i), 256) for i in features_per_stage[:5]]
+            arch_init_kwargs['features_per_stage'] = features_per_stage
+
+            for key in ('kernel_sizes', 'strides', 'n_blocks_per_stage', 'n_conv_per_stage'):
+                if key in arch_init_kwargs and arch_init_kwargs[key] is not None:
+                    arch_init_kwargs[key] = arch_init_kwargs[key][:len(features_per_stage)]
+
+            arch_init_kwargs['n_blocks_per_stage'] = [1] * len(features_per_stage)
+
+        arch_init_kwargs['backbone_channels'] = min(int(arch_init_kwargs.get('backbone_channels', 64)), 64)
         return FasterRCNNInceptionResNetV2SegmentationModel(
             input_channels=num_input_channels,
             num_classes=num_output_channels,
