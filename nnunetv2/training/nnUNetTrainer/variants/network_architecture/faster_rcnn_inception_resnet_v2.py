@@ -165,6 +165,17 @@ class PyramidSmoothing(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.conv(x)
 
+class _DeepSupervisionDecoderProxy:
+    def __init__(self, parent: "FasterRCNNInceptionResNetV2SegmentationModel"):
+        self.parent = parent
+
+    @property
+    def deep_supervision(self) -> bool:
+        return self.parent.deep_supervision
+
+    @deep_supervision.setter
+    def deep_supervision(self, enabled: bool):
+        self.parent.deep_supervision = enabled
 
 class FasterRCNNInceptionResNetV2SegmentationModel(nn.Module):
     def __init__(
@@ -204,6 +215,7 @@ class FasterRCNNInceptionResNetV2SegmentationModel(nn.Module):
             raise ValueError('The custom Faster R-CNN/Inception-ResNet-v2 backbone requires at least two stages.')
 
         self.deep_supervision = deep_supervision
+        self.decoder = _DeepSupervisionDecoderProxy(self)
         self.num_deep_supervision_outputs = num_feature_levels - 1
         self.interp_mode = 'bilinear' if ndim == 2 else 'trilinear'
 
