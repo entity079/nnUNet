@@ -154,3 +154,62 @@ class DC_and_topk_loss(nn.Module):
 
         result = self.weight_ce * ce_loss + self.weight_dice * dc_loss
         return result
+
+class GDL_and_Focal_loss(nn.Module):
+    def __init__(self, soft_dice_kwargs, focal_kwargs, weight_focal=1, weight_gdl=1, ignore_label=None):
+        super().__init__()
+        if ignore_label is not None:
+            focal_kwargs = dict(focal_kwargs)
+            focal_kwargs['ignore_index'] = ignore_label
+
+        self.weight_gdl = weight_gdl
+        self.weight_focal = weight_focal
+        self.ignore_label = ignore_label
+
+        self.focal = FocalLoss(**focal_kwargs)
+        self.gdl = MemoryEfficientGeneralizedDiceLoss(apply_nonlin=softmax_helper_dim1, **soft_dice_kwargs)
+
+    def forward(self, net_output: torch.Tensor, target: torch.Tensor):
+        if self.ignore_label is not None:
+            assert target.shape[1] == 1, 'ignore label is not implemented for one hot encoded target variables'
+            mask = target != self.ignore_label
+            target_dice = torch.where(mask, target, 0)
+            num_fg = mask.sum()
+        else:
+            target_dice = target
+            mask = None
+            num_fg = None
+
+        gdl_loss = self.gdl(net_output, target_dice, loss_mask=mask) if self.weight_gdl != 0 else 0
+        focal_loss = self.focal(net_output, target[:, 0]) \
+            if self.weight_focal != 0 and (self.ignore_label is None or num_fg > 0) else 0
+        return self.weight_gdl * gdl_loss + self.weight_focal * focal_loss
+
+
+class GDL_and_BCE_focal_loss(nn.Module):
+    def __init__(self, bce_focal_kwargs, soft_dice_kwargs, weight_focal=1, weight_gdl=1, use_ignore_label: bool = False):
+        super().__init__()
+        self.weight_gdl = weight_gdl
+        self.weight_focal = weight_focal
+        self.use_ignore_label = use_ignore_label
+
+        self.focal = FocalBCEWithLogitsLoss(**bce_focal_kwargs)
+        self.gdl = MemoryEfficientGeneralizedDiceLoss(apply_nonlin=torch.sigmoid, **soft_dice_kwargs)
+
+    def forward(self, net_output: torch.Tensor, target: torch.Tensor):
+        if self.use_ignore_label:
+            if target.dtype == torch.bool:
+                mask = ~target[:, -1:]
+            else:
+                mask = (1 - target[:, -1:]).bool()
+            target_regions = target[:, :-1]
+        else:
+            target_regions = target
+            mask = None
+
+        gdl_loss = self.gdl(net_output, target_regions, loss_mask=mask) if self.weight_gdl != 0 else 0
+        target_regions = target_regions.float()
+        focal_loss = self.focal(net_output, target_regions)
+        if mask is not None:
+            focal_loss = (focal_loss * mask).sum() / torch.clip(mask.sum(), min=1e-8)
+        return self.weight_gdl * gdl_loss + self.weight_focal * focal_loss
