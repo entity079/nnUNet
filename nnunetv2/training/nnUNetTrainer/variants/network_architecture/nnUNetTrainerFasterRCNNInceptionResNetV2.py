@@ -11,9 +11,9 @@ from nnunetv2.training.nnUNetTrainer.variants.network_architecture.faster_rcnn_i
 
 
 class nnUNetTrainerFasterRCNNInceptionResNetV2(nnUNetTrainerMixupMosaic):
-    mixup_probability: float = 0.2
+    mixup_probability: float = 0.4
     mixup_alpha: float = 0.2
-    mosaic_probability: float = 0.2
+    mosaic_probability: float = 0.4
 
     def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict,
                  device: torch.device = torch.device('cuda')):
