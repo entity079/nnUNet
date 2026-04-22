@@ -40,7 +40,12 @@ from torch import autocast, nn
 from torch import distributed as dist
 from torch._dynamo import OptimizedModule
 from torch.cuda import device_count
-from torch import GradScaler
+try:
+   from torch import GradScaler           # torch >= 2.3
+   TORCH_HAS_OLD_GRADSCALER = False
+except ImportError:
+   from torch.cuda.amp import GradScaler  # torch < 2.3
+   TORCH_HAS_OLD_GRADSCALER = True
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from nnunetv2.configuration import ANISO_THRESHOLD, default_num_processes
@@ -64,7 +69,7 @@ from nnunetv2.utilities.file_path_utilities import check_workers_alive_and_busy
 from nnunetv2.utilities.get_network_from_plans import get_network_from_plans
 from nnunetv2.utilities.helpers import empty_cache, dummy_context
 from nnunetv2.utilities.label_handling.label_handling import convert_labelmap_to_one_hot, determine_num_input_channels
-from nnunetv2.utilities.plans_handling.plans_handler import PlansManager
+from nnunetv2.utilities.plans_handling.plans_handler import PlansManager, ConfigurationManager
 
 
 class nnUNetTrainer(object):
@@ -123,14 +128,15 @@ class nnUNetTrainer(object):
         ### Setting all the folder names. We need to make sure things don't crash in case we are just running
         # inference and some of the folders may not be defined!
         self.preprocessed_dataset_folder_base = join(nnUNet_preprocessed, self.plans_manager.dataset_name) \
-            if nnUNet_preprocessed is not None else None
+            if nnUNet_preprocessed.is_set() else None
         self.output_folder_base = join(nnUNet_results, self.plans_manager.dataset_name,
                                        self.__class__.__name__ + '__' + self.plans_manager.plans_name + "__" + configuration) \
-            if nnUNet_results is not None else None
-        self.output_folder = join(self.output_folder_base, f'fold_{fold}')
+            if nnUNet_results.is_set() else None
+        self.output_folder = join(self.output_folder_base, f'fold_{fold}') if self.output_folder_base is not None else None
 
         self.preprocessed_dataset_folder = join(self.preprocessed_dataset_folder_base,
-                                                self.configuration_manager.data_identifier)
+                                                self.configuration_manager.data_identifier) \
+            if self.preprocessed_dataset_folder_base is not None else None
         self.dataset_class = None  # -> initialize
         # unlike the previous nnunet folder_with_segs_from_previous_stage is now part of the plans. For now it has to
         # be a different configuration in the same plans
@@ -162,7 +168,7 @@ class nnUNetTrainer(object):
         self.num_input_channels = None  # -> self.initialize()
         self.network = None  # -> self.build_network_architecture()
         self.optimizer = self.lr_scheduler = None  # -> self.initialize
-        self.grad_scaler = GradScaler("cuda") if self.device.type == 'cuda' else None
+        self.grad_scaler = (GradScaler("cuda") if not TORCH_HAS_OLD_GRADSCALER else GradScaler()) if self.device.type == 'cuda' else None
         self.loss = None  # -> self.initialize
 
         ### Simple logging. Don't take that away from me!
@@ -209,14 +215,32 @@ class nnUNetTrainer(object):
             self.num_input_channels = determine_num_input_channels(self.plans_manager, self.configuration_manager,
                                                                    self.dataset_json)
 
-            self.network = self.build_network_architecture(
-                self.configuration_manager.network_arch_class_name,
-                self.configuration_manager.network_arch_init_kwargs,
-                self.configuration_manager.network_arch_init_kwargs_req_import,
-                self.num_input_channels,
-                self.label_manager.num_segmentation_heads,
-                self.enable_deep_supervision
-            ).to(self.device)
+            sig = inspect.signature(self.build_network_architecture)
+            if 'plans_manager' in sig.parameters:
+                self.network = self.build_network_architecture(
+                    self.plans_manager,
+                    self.configuration_manager,
+                    self.num_input_channels,
+                    self.label_manager.num_segmentation_heads,
+                    self.enable_deep_supervision
+                ).to(self.device)
+            else:
+                warnings.warn(
+                    f"Trainer {self.__class__.__name__} uses the old build_network_architecture signature. "
+                    "Please update to the new signature: "
+                    "build_network_architecture(plans_manager, configuration_manager, "
+                    "num_input_channels, num_output_channels, enable_deep_supervision). "
+                    "The old signature will be removed in a future version.",
+                    DeprecationWarning, stacklevel=2,
+                )
+                self.network = self.build_network_architecture(
+                    self.configuration_manager.network_arch_class_name,
+                    self.configuration_manager.network_arch_init_kwargs,
+                    self.configuration_manager.network_arch_init_kwargs_req_import,
+                    self.num_input_channels,
+                    self.label_manager.num_segmentation_heads,
+                    self.enable_deep_supervision
+                ).to(self.device)
             # compile network for free speedup
             if self._do_i_compile():
                 self.print_to_log_file('Using torch.compile...')
@@ -323,9 +347,8 @@ class nnUNetTrainer(object):
             save_json(dct, join(self.output_folder, "debug.json"))
 
     @staticmethod
-    def build_network_architecture(architecture_class_name: str,
-                                   arch_init_kwargs: dict,
-                                   arch_init_kwargs_req_import: Union[List[str], Tuple[str, ...]],
+    def build_network_architecture(plans_manager: PlansManager,
+                                   configuration_manager: ConfigurationManager,
                                    num_input_channels: int,
                                    num_output_channels: int,
                                    enable_deep_supervision: bool = True) -> nn.Module:
@@ -349,9 +372,9 @@ class nnUNetTrainer(object):
 
         """
         return get_network_from_plans(
-            architecture_class_name,
-            arch_init_kwargs,
-            arch_init_kwargs_req_import,
+            configuration_manager.network_arch_class_name,
+            configuration_manager.network_arch_init_kwargs,
+            configuration_manager.network_arch_init_kwargs_req_import,
             num_input_channels,
             num_output_channels,
             allow_init=True,
@@ -738,7 +761,9 @@ class nnUNetTrainer(object):
                 patch_size_spatial, patch_center_dist_from_border=0, random_crop=False, p_elastic_deform=0,
                 p_rotation=0.2,
                 rotation=rotation_for_DA, p_scaling=0.2, scaling=(0.7, 1.4), p_synchronize_scaling_across_axes=1,
-                bg_style_seg_sampling=False  # , mode_seg='nearest'
+                bg_style_seg_sampling=False,
+                border_mode_seg='constant',
+                padding_value_seg=-1,
             )
         )
 
@@ -834,7 +859,7 @@ class nnUNetTrainer(object):
                     ApplyRandomBinaryOperatorTransform(
                         channel_idx=list(range(-len(foreground_labels), 0)),
                         strel_size=(1, 8),
-                        p_per_label=1
+                        p_per_label=0.5
                     ), apply_probability=0.4
                 )
             )
@@ -844,7 +869,7 @@ class nnUNetTrainer(object):
                         channel_idx=list(range(-len(foreground_labels), 0)),
                         fill_with_other_class_p=0,
                         dont_do_if_covers_more_than_x_percent=0.15,
-                        p_per_label=1
+                        p_per_label=0.5
                     ), apply_probability=0.2
                 )
             )
@@ -944,8 +969,8 @@ class nnUNetTrainer(object):
         save_json(self.dataset_json, join(self.output_folder_base, 'dataset.json'), sort_keys=False)
 
         # we don't really need the fingerprint but its still handy to have it with the others
-        shutil.copy(join(self.preprocessed_dataset_folder_base, 'dataset_fingerprint.json'),
-                    join(self.output_folder_base, 'dataset_fingerprint.json'))
+        shutil.copyfile(join(self.preprocessed_dataset_folder_base, 'dataset_fingerprint.json'),
+                        join(self.output_folder_base, 'dataset_fingerprint.json'))
 
         # produces a pdf in output folder
         self.plot_network_architecture()
@@ -974,7 +999,7 @@ class nnUNetTrainer(object):
                     isinstance(self.dataloader_train, (NonDetMultiThreadedAugmenter, MultiThreadedAugmenter)):
                 self.dataloader_train._finish()
             if self.dataloader_val is not None and \
-                    isinstance(self.dataloader_train, (NonDetMultiThreadedAugmenter, MultiThreadedAugmenter)):
+                    isinstance(self.dataloader_val, (NonDetMultiThreadedAugmenter, MultiThreadedAugmenter)):
                 self.dataloader_val._finish()
             sys.stdout = old_stdout
 
