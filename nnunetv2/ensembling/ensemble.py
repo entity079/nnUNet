@@ -44,7 +44,7 @@ def merge_files(list_of_files,
     image_reader_writer.write_seg(segmentation, output_filename_truncated + output_file_ending, properties)
     if save_probabilities:
         np.savez_compressed(output_filename_truncated + '.npz', probabilities=probabilities)
-        save_pickle(probabilities, output_filename_truncated + '.pkl')
+        save_pickle(properties, output_filename_truncated + '.pkl')
 
 
 def ensemble_folders(list_of_input_folders: List[str],
