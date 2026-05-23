@@ -187,6 +187,9 @@ class nnUNetTrainer(object):
 
         ### initializing stuff for remembering things and such
         self._best_ema = None
+        self.patience = int(os.environ.get('NNUNET_PATIENCE', 0))
+        self.min_delta = float(os.environ.get('NNUNET_MIN_DELTA', 1e-4))
+        self._no_improve_epochs = 0                     
 
         ### inference things
         self.inference_allowed_mirroring_axes = None  # this variable is set in
@@ -1186,11 +1189,24 @@ class nnUNetTrainer(object):
             self.save_checkpoint(join(self.output_folder, 'checkpoint_latest.pth'))
 
         # handle 'best' checkpointing. ema_fg_dice is computed by the logger and can be accessed like this
-        if self._best_ema is None or self.logger.get_value('ema_fg_dice', step=-1) > self._best_ema:
-            self._best_ema = self.logger.get_value('ema_fg_dice', step=-1)
+            current_ema = self.logger.get_value('ema_fg_dice', step=-1)
+            improved = self._best_ema is None or current_ema > (self._best_ema + self.min_delta)
+            if improved:
+                self._best_ema = current_ema
+                self._no_improve_epochs = 0
             self.print_to_log_file(f"Yayy! New best EMA pseudo Dice: {np.round(self._best_ema, decimals=4)}")
             self.save_checkpoint(join(self.output_folder, 'checkpoint_best.pth'))
+        else:
+            self._no_improve_epochs += 1
 
+        if self.patience > 0:
+            self.print_to_log_file(f"Early stopping counter: {self._no_improve_epochs}/{self.patience}")
+            if self._no_improve_epochs >= self.patience:
+                self.print_to_log_file(
+                    f"Early stopping triggered at epoch {self.current_epoch}. "
+                    f"No EMA Dice improvement larger than {self.min_delta} for {self.patience} epochs."
+                )
+                self.num_epochs = self.current_epoch + 1
         if self.local_rank == 0:
             self.logger.plot_progress_png(self.output_folder)
 
@@ -1212,6 +1228,9 @@ class nnUNetTrainer(object):
                     'grad_scaler_state': self.grad_scaler.state_dict() if self.grad_scaler is not None else None,
                     'logging': self.logger.get_checkpoint(),
                     '_best_ema': self._best_ema,
+                    '_no_improve_epochs': self._no_improve_epochs,
+                    'patience': self.patience,
+                    'min_delta': self.min_delta,                    
                     'current_epoch': self.current_epoch + 1,
                     'init_args': self.my_init_kwargs,
                     'trainer_name': self.__class__.__name__,
@@ -1240,6 +1259,9 @@ class nnUNetTrainer(object):
         self.current_epoch = checkpoint['current_epoch']
         self.logger.load_checkpoint(checkpoint['logging'])
         self._best_ema = checkpoint['_best_ema']
+        self._no_improve_epochs = checkpoint.get('_no_improve_epochs', 0)
+        self.patience = checkpoint.get('patience', self.patience)
+        self.min_delta = checkpoint.get('min_delta', self.min_delta)        
         self.inference_allowed_mirroring_axes = checkpoint[
             'inference_allowed_mirroring_axes'] if 'inference_allowed_mirroring_axes' in checkpoint.keys() else self.inference_allowed_mirroring_axes
 
