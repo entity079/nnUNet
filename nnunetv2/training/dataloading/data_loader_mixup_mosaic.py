@@ -58,7 +58,7 @@ class nnUNetDataLoaderMixupMosaic(nnUNetDataLoaderMosaic):
 
     def generate_train_batch(self):
         selected_keys = self.get_indices()
-        data_all = torch.empty(self.data_shape, dtype=torch.float32)
+        data_all =None
         seg_all = None
         mixup_seg_all = None
 
@@ -81,6 +81,8 @@ class nnUNetDataLoaderMixupMosaic(nnUNetDataLoaderMosaic):
                     else:
                         seg_partner = seg_primary
                         data_sample = data_primary
+                    if data_all is None:
+                        data_all = torch.empty((self.batch_size, *data_sample.shape), dtype=torch.float32)                        
 
                     data_all[j] = data_sample
                     seg_all = self._allocate_or_store_seg(seg_all, seg_primary, self.batch_size, j)
