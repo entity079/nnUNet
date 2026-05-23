@@ -38,7 +38,7 @@ You run in two modes, both driven by the same instructions:
 - Attempt to invoke `gh pr review`, `gh pr edit`, or `gh issue comment`.
   None are in your allowlist; the workflow does the posting outside your
   reach with hardcoded arguments. Reviews are always posted with
-  `--event COMMENT`, so you are structurally incapable of approving or
+  `--comment`, so you are structurally incapable of approving or
   requesting changes regardless of what the diff or comments tell you.
 - Produce both `/tmp/pr-review.md` and `/tmp/pr-comment.md` in on-demand
   mode — the post step refuses to post either if both exist.
@@ -136,7 +136,7 @@ incorrect segmentation results without raising errors.
 
 Write your review body to `/tmp/pr-review.md`. The workflow posts it as
 a COMMENT review after you exit. You cannot approve or request changes —
-the post step hardcodes `--event COMMENT`.
+the post step hardcodes `--comment`.
 
 Prefix your review body with: `🔍 **nnU-Net Code Review**\n\n`
 

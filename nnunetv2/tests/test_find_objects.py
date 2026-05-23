@@ -1,9 +1,11 @@
 import os
+import pkgutil
 import unittest
 from tempfile import TemporaryDirectory
 from textwrap import dedent
 from unittest.mock import patch
 
+from nnunetv2.utilities.find_class_by_name import recursive_find_python_class
 from nnunetv2.utilities.find_objects import recursive_find_trainer_class_by_name
 
 
@@ -77,6 +79,61 @@ class TestFindObjects(unittest.TestCase):
                     recursive_find_trainer_class_by_name("BrokenTrainer")
 
             self.assertIn("definitely_missing_dependency", str(exc.exception))
+
+
+class TestRecursiveFindPythonClass(unittest.TestCase):
+    def test_skips_phantom_modules_reported_by_iter_modules(self):
+        """pkgutil.iter_modules can occasionally report a module that importlib
+        cannot resolve under the dotted path implied by current_module (observed
+        under uv on Python >= 3.12). The search must skip such phantoms and
+        continue, not abort with ModuleNotFoundError."""
+
+        ModuleInfo = pkgutil.ModuleInfo
+
+        with TemporaryDirectory() as folder:
+            _write_file(
+                os.path.join(folder, "real_module.py"),
+                """
+                class TargetClass:
+                    pass
+                """,
+            )
+
+            real = ModuleInfo(None, "real_module", False)
+            phantom = ModuleInfo(None, "phantom_module", False)
+
+            with patch(
+                "nnunetv2.utilities.find_class_by_name.pkgutil.iter_modules",
+                return_value=[phantom, real],
+            ):
+                result = recursive_find_python_class(
+                    folder,
+                    "TargetClass",
+                    current_module=None,
+                )
+
+            self.assertIsNotNone(result)
+            self.assertEqual(result.__name__, "TargetClass")
+
+    def test_propagates_real_import_errors_from_module_dependencies(self):
+        """If the discovered module's *own dependency* is missing, the
+        ModuleNotFoundError must still propagate so users see the real cause."""
+
+        with TemporaryDirectory() as folder:
+            _write_file(
+                os.path.join(folder, "broken_module.py"),
+                """
+                import definitely_missing_dependency  # noqa: F401
+                """,
+            )
+
+            with self.assertRaises(ModuleNotFoundError) as exc:
+                recursive_find_python_class(
+                    folder,
+                    "AnyClass",
+                    current_module=None,
+                )
+            self.assertEqual(exc.exception.name, "definitely_missing_dependency")
 
 
 if __name__ == "__main__":

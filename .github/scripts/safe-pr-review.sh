@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# safe-pr-review.sh — PR review wrapper that hardcodes --event COMMENT.
+# safe-pr-review.sh — PR review wrapper that hardcodes --comment.
 #
 # Usage: safe-pr-review.sh <pr-number> <body-file>
 #
-# Forces --event COMMENT so the agent cannot approve or request changes on
+# Forces --comment so the agent cannot approve or request changes on
 # a PR. Reads the review body from a file to avoid shell-quoting pitfalls
 # with attacker-influenced content.
 #
@@ -26,4 +26,4 @@ fi
 
 REPO="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY must be set}"
 
-exec gh pr review "$NUMBER" --repo "$REPO" --event COMMENT --body-file "$BODY_FILE"
+exec gh pr review "$NUMBER" --repo "$REPO" --comment --body-file "$BODY_FILE"

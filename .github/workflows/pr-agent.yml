@@ -26,7 +26,7 @@ name: nnU-Net PR Agent
 #         is structurally incapable of APPROVE / REQUEST_CHANGES.
 #       * `gh pr review`, `gh issue comment`, `gh pr edit` are invoked by
 #         workflow steps with hardcoded args (PR number from $GITHUB_*
-#         env, --event COMMENT, label denylist), so prompt injection
+#         env, --comment, label denylist), so prompt injection
 #         cannot redirect them to other PRs / issues / events / labels.
 #       * No workspace shell script appears in any agent allowlist, so
 #         the historical "model writes safe-pr-review.sh, then invokes
@@ -146,8 +146,9 @@ jobs:
             --max-turns 15
 
       # Post review and apply labels OUTSIDE the model's reach. PR number
-      # comes from the GitHub event (not from the model), --event is
-      # hardcoded to COMMENT, and the label denylist is inlined here.
+      # comes from the GitHub event (not from the model), --comment is
+      # hardcoded (so the review event type cannot become APPROVE or
+      # REQUEST_CHANGES), and the label denylist is inlined here.
       # A successful prompt injection cannot redirect any of this to a
       # different PR / event / label.
       - name: Post review
@@ -158,7 +159,7 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           if [ -f /tmp/pr-review.md ]; then
-            gh pr review "$PR" --repo "$REPO" --event COMMENT --body-file /tmp/pr-review.md
+            gh pr review "$PR" --repo "$REPO" --comment --body-file /tmp/pr-review.md
           else
             echo "Agent did not produce /tmp/pr-review.md — nothing to post."
           fi
@@ -292,8 +293,9 @@ jobs:
             --max-turns 25
 
       # Post review or conversation comment OUTSIDE the model's reach.
-      # PR number from event, --event hardcoded for the review path,
-      # both files mutually exclusive.
+      # PR number from event, --comment hardcoded for the review path
+      # (so APPROVE / REQUEST_CHANGES are unreachable), both files
+      # mutually exclusive.
       - name: Post review or comment
         if: always()
         env:
@@ -306,7 +308,7 @@ jobs:
             exit 1
           fi
           if [ -f /tmp/pr-review.md ]; then
-            gh pr review "$PR" --repo "$REPO" --event COMMENT --body-file /tmp/pr-review.md
+            gh pr review "$PR" --repo "$REPO" --comment --body-file /tmp/pr-review.md
           elif [ -f /tmp/pr-comment.md ]; then
             gh issue comment "$PR" --repo "$REPO" --body-file /tmp/pr-comment.md
           else

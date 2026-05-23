@@ -83,7 +83,23 @@ def _recursive_find_python_class(folder: str, class_name: str, current_module: s
             )
             if verbose:
                 print(f"  Inspecting module: {search_module}")
-            m = importlib.import_module(search_module)
+            try:
+                m = importlib.import_module(search_module)
+            except ModuleNotFoundError as e:
+                # Skip modules that pkgutil.iter_modules reported but importlib cannot
+                # actually import as themselves. This has been observed under uv on
+                # Python >= 3.12 where the module discovered on disk is not resolvable
+                # via the dotted path that current_module suggests. Re-raise if the
+                # missing module is a dependency of the trainer (different name) so
+                # users still see real ImportErrors.
+                if e.name == search_module:
+                    if verbose:
+                        print(
+                            f"  Skipping module {search_module}: discovered by "
+                            f"pkgutil but not importable as {search_module}"
+                        )
+                    continue
+                raise
             if hasattr(m, class_name):
                 if verbose:
                     print(f"Found class {class_name} in {search_module}")
